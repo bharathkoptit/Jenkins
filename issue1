@@ -1,0 +1,18 @@
+isuue:  jenkins  inactive  status 
+Create the Missing Directory: Ensure that the directory /var/cache/jenkins/war/META-INF/ exists. If it doesn't, you can create it manually:
+
+bash
+Copy code
+sudo mkdir -p /var/cache/jenkins/war/META-INF/
+Set Correct Permissions: Make sure the directory and its parent directories have the correct permissions for Jenkins to access them:
+
+bash
+Copy code
+sudo chown -R jenkins:jenkins /var/cache/jenkins/
+Replace jenkins:jenkins with the appropriate user and group if Jenkins uses different ones on your system.
+
+Restart Jenkins: After creating the directory and setting the correct permissions, try restarting Jenkins:
+
+bash
+Copy code
+sudo systemctl restart jenkins
