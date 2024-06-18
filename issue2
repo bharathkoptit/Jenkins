@@ -1,0 +1,7 @@
+optit@jenkins-master-1:~$ ls -ld /var/lib/jenkins/workspace/OptItLabAssignments/Optitlab_Assignment_CI/Build/
+drwxr-xr-x 3 root root 4096 Jun 17 15:19 /var/lib/jenkins/workspace/OptItLabAssignments/Optitlab_Assignment_CI/Build/
+optit@jenkins-master-1:~$ sudo chown -R jenkins:jenkins /var/lib/jenkins/workspace/OptItLabAssignments/Optitlab_Assignment_CI/Build/
+sudo chmod -R 755 /var/lib/jenkins/workspace/OptItLabAssignments/Optitlab_Assignment_CI/Build/
+[sudo] password for optit: 
+optit@jenkins-master-1:~$ ls -ld /var/lib/jenkins/workspace/OptItLabAssignments/Optitlab_Assignment_CI/Build/
+drwxr-xr-x 5 jenkins jenkins 4096 Jun 18 10:21 /var/lib/jenkins/workspace/OptItLabAssignments/Optitlab_Assignment_CI/Build/
