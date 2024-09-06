@@ -1,0 +1,115 @@
+pipeline {
+    agent { label 'agent93' }
+
+    parameters {
+        string(name: 'CONTAINER_NAME', defaultValue: '', description: 'Name of the container to stop and delete')
+    }
+
+    environment {
+        CONTAINER_NAME = "${params.CONTAINER_NAME ?: 'default_container'}"
+    }
+
+    stages {
+        stage('Retrieve Network Information') {
+            steps {
+                script {
+                    // Get the network mode of the container before it is deleted
+                    def networkName = sh(
+                        script: """
+                        docker inspect ${CONTAINER_NAME} --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}'
+                        """,
+                        returnStdout: true
+                    ).trim()
+
+                    if (networkName) {
+                        env.NETWORK_NAME = networkName
+                        echo "Retrieved network ID: ${NETWORK_NAME}"
+                    } else {
+                        error "Failed to retrieve network information for container: ${CONTAINER_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage('Stop Docker Container') {
+            steps {
+                script {
+                    def containerName = sh(
+                        script: "docker ps -a --filter name=${CONTAINER_NAME} --format '{{.Names}}'",
+                        returnStdout: true
+                    ).trim()
+
+                    if (containerName != "") {
+                        sh "docker stop ${containerName}"
+                        echo "Stopped Docker container: ${containerName}"
+                    } else {
+                        echo "No running container found with name: ${CONTAINER_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage('Delete Docker Container') {
+            steps {
+                script {
+                    def containerName = sh(
+                        script: "docker ps -a --filter name=${CONTAINER_NAME} --format '{{.Names}}'",
+                        returnStdout: true
+                    ).trim()
+
+                    if (containerName != "") {
+                        sh "docker rm ${containerName}"
+                        echo "Deleted Docker container: ${containerName}"
+                    } else {
+                        echo "No container found to delete with name: ${CONTAINER_NAME}"
+                    }
+                }
+            }
+        }
+
+        stage('Delete Docker Network') {
+            steps {
+                script {
+                    def networkName = sh(
+                        script: "docker network ls --filter id=${env.NETWORK_NAME} --format '{{.Name}}'",
+                        returnStdout: true
+                    ).trim()
+
+                    def networkInUse = sh(
+                        script: "docker network inspect ${networkName} --format '{{json .Containers}}'",
+                        returnStdout: true
+                    ).trim()
+
+                    if (networkInUse == "{}") {
+                        sh "docker network rm ${networkName}"
+                        echo "Deleted Docker network: ${networkName}"
+                    } else {
+                        echo "Docker network ${networkName} is still in use by other containers."
+                    }
+                }
+            }
+        }
+
+        stage('Update NGINX Configuration') {
+            steps {
+                script {
+                    def nginxConfigFile = "/etc/nginx/nginx.conf"
+
+                    sh """
+                    sed -i '/server_name ${CONTAINER_NAME};/,+4d' ${nginxConfigFile}
+                    nginx -s reload
+                    """
+                    echo "Updated NGINX configuration and reloaded the service."
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo "Pipeline completed successfully."
+        }
+        failure {
+            echo "Pipeline failed."
+        }
+    }
+}
