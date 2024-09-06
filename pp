@@ -7,7 +7,9 @@ pipeline {
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS Region')
         string(name: 'STEAMPIPE_PORT', defaultValue: '9194', description: 'Port for Steampipe')
         string(name: 'POWERPIPE_PORT', defaultValue: '9040', description: 'Port for Powerpipe')
+        string(name: 'NGINX_PORT', defaultValue: '80', description: 'Port for Nginx')
         string(name: 'IMAGE_NAME', defaultValue: 'pp-sp-img', description: 'Docker image for Powerpipe and Steampipe')
+        string(name: 'NGINX_IMAGE', defaultValue: 'nginx:latest', description: 'Docker image for Nginx')
         string(name: 'DOCKER_NETWORK', defaultValue: '', description: 'Docker Network Name (optional)')
         string(name: 'CONTAINER_NAME', defaultValue: '', description: 'Container Name (optional)')
     }
@@ -18,7 +20,9 @@ pipeline {
         AWS_REGION = "${params.AWS_REGION}"
         STEAMPIPE_PORT = "${params.STEAMPIPE_PORT}"
         POWERPIPE_PORT = "${params.POWERPIPE_PORT}"
+        NGINX_PORT = "${params.NGINX_PORT}"
         IMAGE_NAME = "${params.IMAGE_NAME}"
+        NGINX_IMAGE = "${params.NGINX_IMAGE}"
 
         DOCKER_NETWORK = "${params.DOCKER_NETWORK ?: 'aws_default_network'}"
         CONTAINER_NAME_BASE = "${params.CONTAINER_NAME ?: 'default_container'}"
@@ -58,7 +62,11 @@ pipeline {
                         error "Port ${POWERPIPE_PORT} is already in use."
                     }
 
-                    echo "Both Steampipe Port (${STEAMPIPE_PORT}) and Powerpipe Port (${POWERPIPE_PORT}) are available."
+                    if (!isPortAvailable(NGINX_PORT)) {
+                        error "Port ${NGINX_PORT} is already in use."
+                    }
+
+                    echo "Ports for Steampipe (${STEAMPIPE_PORT}), Powerpipe (${POWERPIPE_PORT}), and Nginx (${NGINX_PORT}) are available."
                 }
             }
         }
@@ -81,7 +89,7 @@ pipeline {
             }
         }
 
-        stage('Run Docker Container') {
+        stage('Run Docker Containers') {
             steps {
                 script {
                     def containerName = ""
@@ -114,6 +122,14 @@ pipeline {
                       -e AWS_REGION=${AWS_REGION} \\
                       ${IMAGE_NAME}
                     """
+
+                    // Run Nginx container
+                    sh """
+                    docker run -d --name nginx_container \\
+                      --network ${DOCKER_NETWORK} \\
+                      -p ${NGINX_PORT}:80 \\
+                      ${NGINX_IMAGE}
+                    """
                 }
             }
         }
@@ -145,12 +161,59 @@ pipeline {
                 }
             }
         }
+
+        stage('Update Nginx Configuration') {
+            steps {
+                script {
+                    // Assume Nginx config file is in /etc/nginx/nginx.conf
+                    def nginxConfPath = '/etc/nginx/nginx.conf'
+
+                    // Create a new location block for the new services
+                    def nginxConfig = """
+                    # Proxy for Powerpipe
+                    location /newpath/account/powerpipe/ {
+                        proxy_pass http://127.0.0.1:${POWERPIPE_PORT};
+                        proxy_set_header Host \$host;
+                        proxy_set_header X-Real-IP \$remote_addr;
+                        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                        proxy_set_header X-Forwarded-Proto \$scheme;
+                    }
+
+                    # Proxy for Steampipe
+                    location /newpath/account/steampipe/ {
+                        proxy_pass http://127.0.0.1:${STEAMPIPE_PORT};
+                        proxy_set_header Host \$host;
+                        proxy_set_header X-Real-IP \$remote_addr;
+                        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                        proxy_set_header X-Forwarded-Proto \$scheme;
+                    }
+                    """
+
+                    // Update the nginx.conf file by appending the new configurations
+                    sh """
+                    echo '${nginxConfig}' | sudo tee -a ${nginxConfPath}
+                    """
+                }
+            }
+        }
+
+        stage('Reload Nginx') {
+            steps {
+                script {
+                    // Reload Nginx to apply new configurations
+                    sh "sudo nginx -s reload"
+                }
+            }
+        }
+        
+     
+        }
     }
 
     post {
         always {
             script {
-                echo "Containers created but not deleted in this pipeline run."
+                echo "Pipeline execution complete."
             }
         }
     }
